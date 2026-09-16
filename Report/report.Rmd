@@ -1,0 +1,66 @@
+---
+title: "UK Regional Growth and Wages"
+output: html_document
+date: "2026-09-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "..")
+
+library(tidyverse)
+library(readxl)
+```
+
+
+## Introduction
+This report investigates the relationship between regional labour productivity and household income across the 12 ITL1 regions and nations of the UK, using ONS data from 1998 to 2023. We test whether more productive regions also tend to have higher disposable household income.
+```{r import-data, message=FALSE}
+prod <- read_excel("data/prodbyregaccessiblefinal.xlsx", sheet = "Table_2", skip = 5)
+prod_clean <- prod[-c(1, 2), ]
+names(prod_clean)[1] <- "Year"
+prod_clean[-1] <- lapply(prod_clean[-1], as.numeric)
+prod_clean$Year <- as.numeric(prod_clean$Year)
+
+prod_long <- prod_clean %>%
+  pivot_longer(cols = -Year, names_to = "Region", values_to = "Productivity")
+
+income <- read_excel("data/regionalgrossdisposablehouseholdincomeallitlregions2024.xlsx", sheet = "Table 4", skip = 3)
+
+income_long <- income %>%
+  filter(ITL == "ITL1") %>%
+  select(-ITL, -`ITL code`) %>%
+  pivot_longer(cols = -`Region name`, names_to = "Year", values_to = "Income") %>%
+  rename(Region = `Region name`) %>%
+  mutate(Region = if_else(Region == "Yorkshire and The Humber", "Yorkshire and the Humber", Region),
+         Year = as.numeric(Year))
+
+combined <- prod_long %>%
+  inner_join(income_long, by = c("Region", "Year"))
+```
+
+## Data 
+Productivity and household income data were sourced from the ONS, cleaned, reshaped into long format, and joined by region and year.
+
+## Visualising the relationship
+The scatter plot below shows each region-year observation, with a fitted line indicating the overall trend.
+```{r plot}
+ggplot(combined, aes(x = Productivity, y = Income)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Regional Productivity vs Household Income (1998–2023)",
+       x = "Productivity (UK = 100)",
+       y = "GDHI per head (UK = 100)")
+```
+
+## Regression results
+A simple linear regression of income on productivity produces the following results:
+```{r regression}
+model <- lm(Income ~ Productivity, data = combined)
+summary(model)
+```
+
+## Interpretation
+The results show a strong positive relationship: a 1-point increase in a region's productivity index is associated with an approximately 1.07-point increase in GDHI per head (p < 0.001), with an R² of 0.91.
+
+However, this is panel data — the same 12 regions observed repeatedly over 26 years — so observations are not independent. Some of the apparent explanatory power likely reflects persistent regional characteristics (e.g. London's consistently high productivity and income) rather than a genuine year-to-year relationship. A more robust approach would account for region-level fixed effects or examine within-region changes over time rather than pooling all region-years together.
